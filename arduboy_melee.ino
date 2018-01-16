@@ -1,6 +1,6 @@
 /*
 author: Jens FROEBEL created: 2017-03-12 modified: 2017-04-19
-version poligone_007.ino
+version poligone_008.ino
 */
 #include <Arduboy.h>
 Arduboy arduboy;
@@ -13,15 +13,18 @@ Arduboy arduboy;
  * update to <Arduino2.h>
  * model + physic = object, make one common struct
  * add parallax starfield
- * takeAction(physic1) --> gravity
  * takeAction(physic4) --> Enemy, turn to ship, trust, shoot
  * bullets: xvel, yvel, xpos, ypos, enable, force, maxdistance, traveled
  * rocket:  xvel, yvel, xpos, ypos, xacc, yacc, enable, force, maxdistance, traveled, mass, rot, scale, 
  * bomb:    xvel, yvel, xpos, ypos, xacc, yacc, enable, force, mass, scale
  * asteroid: model + physic-property
  * collision test, use radius property
+ * done: blink thruster
  * draw explosion
  * save high score to PROGMEM
+ * done: takeAction(physic1) --> gravity
+ * done: define const Universe borders
+ * done: cam follow ship in high distance
  * done: autozoom cam to objects: ship, enemy, (planet) --> CalcCam()
  * done: takeAction(cam) --> set position based on objects
  * done: add non parallax dustfield
@@ -40,7 +43,9 @@ const byte MAX_X = 128;
 //int x = MAX_X / 2;
 //int y = MAX_Y / 2;
 const byte KEYDELAY = 1;
-const byte MAX_STARS = 10;
+const byte MAX_STARS = 30;
+const int UNIVERSE_X = MAX_X * 6;
+const int UNIVERSE_Y = MAX_Y * 6;
 //char text[16] = "Press Buttons!";;      //General string buffer
 
 unsigned long lasttimestamp = 0;
@@ -70,9 +75,9 @@ struct property {
     bool enable;
 };
 
-property physic1 = { 1, 2,  5,          -64, 0, 0, 0, 0, 0, 180, 1}; // ship
-property physic2 = {10, 1, 15,          0, 0, 0, 0, 0, 0,   0, 1}; // outer pentagone
-property physic3 = {10, 1, 14*809/1000, 0, 0, 0, 0, 0, 0, 180, 1}; // inner pentagone
+property physic1 = { 1, 2,  5,          -128, 0, 0, 0, 0, 0, 180, 1}; // ship
+property physic2 = {10, 1, 12,          0, 0, 0, 0, 0, 0,   0, 1}; // outer pentagone
+property physic3 = {10, 1, 12*809/1000, 0, 0, 0, 0, 0, 0, 180, 1}; // inner pentagone
 
 int dust[MAX_STARS][2];
 //dot bullet[3];
@@ -195,7 +200,7 @@ void setup() {
 
   // init Dustfield
   
-  for (int i = 0; i < MAX_STARS; i++) {dust[i][0] = random(MAX_X * 8) - (MAX_X * 4); dust[i][1] = random(MAX_Y * 4) - (MAX_Y * 2);}
+  for (int i = 0; i < MAX_STARS; i++) {dust[i][0] = random(-UNIVERSE_X * 1.3, UNIVERSE_X * 1.3) ; dust[i][1] = random(-UNIVERSE_Y * 1.3, UNIVERSE_Y * 1.3);}
   //for (int i = 0; i < MAX_STARS; i++) {dust[i][0] = i; dust[i][1] = 0;}
 
 
@@ -233,6 +238,21 @@ void ButtonAction() {
   --physic3.rot %= 360;
 }
 
+void CalcGravity() {
+  float distance, distance2, distx, disty, gravity;
+  distx = (physic1.xpos - physic2.xpos);
+  //distx = constrain(distx, 10, 120);           // never zero, prevent
+  disty = (physic1.ypos - physic2.ypos);
+  //disty = constrain(disty, 10, 120);           // never zero, prevent
+  distance2 = sq(constrain(abs(distx), 10, 256)) + sq(constrain(abs(disty), 10, 256));           // square of diagonal distance
+  distance  = sqrt(abs(distance2));
+  gravity   = physic1.mass * physic2.mass / distance2;
+
+  physic1.xacc -= gravity * distx / distance;
+  physic1.yacc -= gravity * disty / distance;
+  //arduboy.drawLine(64, 32, 64 + gravity * distx / distance, 32 + gravity * disty / distance, WHITE);
+}
+
 void CalcVel() {
   physic1.xvel += physic1.xacc;
   physic1.xvel *= 0.995;
@@ -247,22 +267,25 @@ void CalcVel() {
 void CalcPos() {
   physic1.xpos += physic1.xvel;
   //physic1.xpos = constrain(physic1.xpos, -(MAX_X / 2) , (MAX_X / 2) );
-  if (physic1.xpos > MAX_X * 2) {physic1.xpos -= MAX_X * 4;};
-  if (physic1.xpos < -MAX_X * 2) {physic1.xpos += MAX_X * 4;};
+  if (physic1.xpos > UNIVERSE_X) {physic1.xpos -= UNIVERSE_X * 2;};
+  if (physic1.xpos < -UNIVERSE_X) {physic1.xpos += UNIVERSE_X * 2;};
   physic1.ypos += physic1.yvel;
   //physic1.ypos = constrain(physic1.ypos, -(MAX_Y / 2) , (MAX_Y / 2) );
-  if (physic1.ypos > MAX_Y * 2) {physic1.ypos -= MAX_Y * 4;};
-  if (physic1.ypos < -MAX_Y * 2) {physic1.ypos += MAX_Y * 4;};
+  if (physic1.ypos > UNIVERSE_Y) {physic1.ypos -= UNIVERSE_Y * 2;};
+  if (physic1.ypos < -UNIVERSE_Y) {physic1.ypos += UNIVERSE_Y * 2;};
   
 }
 
 void CalcCam() {
   float deltax, deltay;
   deltax  = (physic2.xpos - physic1.xpos);
+  deltax  = constrain(deltax, -96, 96);               // follow the ship when distance is high
   deltay  = (physic2.ypos - physic1.ypos);
+  deltay  = constrain(deltay, -96, 96);               // follow the ship when distance is high
   cam.x   = physic1.xpos + (deltax / 2);
   cam.y   = physic1.ypos + (deltay / 2);             // set cam between objects
-  if (shakeCam) {cam.x += random(-2,2); cam.y += random(-2,2);}; // add shaking to scene
+  if (shakeCam) {cam.x += random(-3,3); cam.y += random(-2,2);}; // add shaking to scene
+
   cam.zoom = 64 / max(abs(deltax) / 2, abs(deltay)); // calculate zoom based ob objects
   cam.zoom /= 1.15;                                   // zoom out a bit
   cam.zoom = (float) ((int) (1.5 * cam.zoom)) / 1.5; // with round for stepping zoom; coment out for continuous zoom
@@ -272,9 +295,15 @@ void CalcCam() {
 void loop() {
 
   ButtonAction();
+  CalcGravity();
   CalcVel();
   CalcPos();
   CalcCam();  
+
+  // blink thruster
+  if (thrusterenabled) {
+    thrusterenabled = ((millis() % 150) >= 100);
+  }
 
   // ship
   for (int i = 0; i < edges; i++) {transform( &ship1[i], &physic1, &object1[i]);}
