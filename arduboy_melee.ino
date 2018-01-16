@@ -1,13 +1,11 @@
 /*
 author: Jens FROEBEL created: 2017-03-12 modified: 2017-08-07
-version poligone_011.ino
+version poligone_012.ino
 */
 #include <Arduboy.h>
 Arduboy arduboy;
 
 /* TODOs!
- * done: CalcPos with pointers
- * done: CalcVel with Pointers
  * add Live Gauge to objects: ship, enemy, asteroid, planet
  * add pew pew sounds: tone()
  * update to <Arduino2.h>
@@ -20,15 +18,17 @@ Arduboy arduboy;
  * bomb:    xvel, yvel, xpos, ypos, xacc, yacc, enable, force, mass, scale --> release (btn) and ignite (btn)
  * asteroid: model + physic-property
  * collision test, use radius property
- * done: blink thruster
  * draw explosion
  * save high score to PROGMEM
- * done: show velocity
  * show live gauge
- * done: remove KEYDELAY
  * remove scale property in struct model, maybe :-)
- * done: more comments 
  * new algorithm for stars/dust --> maybe introduce 16 bit Fibonacci-LFSR or Galois-LFSR
+ * done: blink thruster
+ * done: show velocity
+ * done: remove KEYDELAY
+ * done: more comments 
+ * done: CalcPos with pointers
+ * done: CalcVel with Pointers
  * done: make grid as backgroud calculated on the fly for each frame, not from memory
  * done: grid with lines
  * done: takeAction(physic1) --> gravity
@@ -72,14 +72,13 @@ struct camproperty {float x, y, zoom;} cam = {0, 0, 0.75}; // pan and zoom of ca
 model ship1[] = {{0,2},{-1,-1},{-0.5,-0.5},{0.5,-0.5},{1,-1}}; // model of my space ship, asteroids-like
 model planet[] = {{0,-1},{-0.951, -0.309},{-0.588, 0.809},{0.588, 0.809}, {0.951, -0.309}}; // model of the planet, pentagone
 model thruster[] = {{0,-3},{1,-2},{0.5,-1},{-0.5,-1},{-1,-2}}; // model of thruster fire
-//model enemy1[] = {{}};
-model refin[] = {{-1,-1},{1,1}};  // reference window input
+model enemy1[] = {{0,1.5},{0.5,1},{0.5,-1.5},{-0.5,-1.5},{-0.5,1}};
 
 model object1[] = {{0,0},{0,0},{0,0},{0,0},{0,0}}; // template for an object with 5 vertices
-model object2[] = {{0,0},{0,0},{0,0},{0,0},{0,0}};
-model object3[] = {{0,0},{0,0},{0,0},{0,0},{0,0}};
-model object4[] = {{0,0},{0,0},{0,0},{0,0},{0,0}};
-model refout[] = {{-1,-1},{1,1}}; // reference window output
+model object2[] = {{0,0},{0,0},{0,0},{0,0},{0,0}}; // outer planet
+model object3[] = {{0,0},{0,0},{0,0},{0,0},{0,0}}; // inner planet
+model object4[] = {{0,0},{0,0},{0,0},{0,0},{0,0}}; // thruster
+model objectEnemy[] = {{0,0},{0,0},{0,0},{0,0},{0,0}}; // enemy
 
 struct property { // property of an object
     float mass, radius, scale; // mass for gravity, radius for collision, scale for reshaping by scale
@@ -88,9 +87,12 @@ struct property { // property of an object
     bool enable;
 };
 
-property physic1 = { 1, 2,  5,          -128, 0, 0, 0, 0, 0, 180, 1}; // ship propeties
-property physic2 = {10, 1, 12,          0, 0, 0, 0, 0, 0,   0, 1}; // outer pentagone properties
-property physic3 = {10, 1, 12*809/1000, 0, 0, 0, 0, 0, 0, 180, 1}; // inner pentagone properties
+//                   m  r   s          xp yp   xv yv   xa ya      r  e
+property physic1 = { 1, 2,  5,       -128, 0,   0, 0,   0, 0,   180, 1}; // ship propeties
+property physic2 = {10, 1, 12,          0, 0,   0, 0,   0, 0,     0, 1}; // outer pentagone properties
+property physic3 = {10, 1, 12*809/1000, 0, 0,   0, 0,   0, 0,   180, 1}; // inner pentagone properties
+property physicEnemy = { 1, 1.5, 5,  +128, 0,   0,+1,   0, 0,     0, 1}; // enemy propeties
+
 
 int dust[MAX_STARS][2]; // array of dust particles
 
@@ -231,7 +233,13 @@ void drawConstrainLine(float x1, float y1, float x2, float y2, float w, float h)
 }
 
 void draw(void) {  
+  
   if (physic1.enable) {
+  // ship: base model is   ship1 
+  // vertices are in       object1 
+  //                       physic1
+  // ship
+  // for (int i = 0; i < edges; i++) {transform( &ship1[i], &physic1, &object1[i]);}
      for (int i = 0; i < edges; i++) {
         drawConstrainLine(object1[i].x, 
                         object1[i].y, 
@@ -239,8 +247,14 @@ void draw(void) {
                         object1[(i+1)%edges].y, MAX_X-1, MAX_Y-1);
      }
   }
-
   if (physic2.enable) {
+  // outer planet: 
+  // base model is   planet
+  // vertices are    object2
+  // physic is       physic2
+  // Planet outer pentagone
+  // for (int i = 0; i < edges; i++) {transform( &planet[i], &physic2, &object2[i]);}
+  
     for (int i = 0; i < edges; i++) {
        drawConstrainLine(object2[i].x, 
                         object2[i].y, 
@@ -248,8 +262,14 @@ void draw(void) {
                         object2[(i+1)%edges].y, MAX_X-1, MAX_Y-1);
     }
   }
-
   if (physic3.enable) {
+  // inner planet: 
+  // base model is   planet; 
+  // vertices are    object3; 
+  // physic is       physic3
+  // Planet inner pentagone
+  // for (int i = 0; i < edges; i++) {transform( &planet[i], &physic3, &object3[i]);}
+
     for (int i = 0; i < edges; i++) {
       drawConstrainLine(object3[i].x, 
                         object3[i].y, 
@@ -257,13 +277,30 @@ void draw(void) {
                         object3[(i+1)%edges].y, MAX_X-1, MAX_Y-1);
     }
   }  
-
   if (thrusterenabled) {
+  // thruster: model is    thrustder 
+  // vertices are          object4
+  // physic is             thrusterenabled and physic1  
+  // thruster: transf each vertex to current values based on model and physical property: output is object4
+  // for (int i = 0; i < edges; i++) {transform( &thruster[i], &physic1, &object4[i]);}
     for (int i = 0; i < edges; i++) {
       drawConstrainLine(object4[i].x, 
                         object4[i].y, 
                         object4[(i+1)%edges].x, 
                         object4[(i+1)%edges].y, MAX_X-1, MAX_Y-1);
+      }
+  }
+  if (physicEnemy.enable) {
+  // Enemy: model is   objectEnemy; 
+  // physics is        physicEnemy
+  // enemy
+  // for (int i = 0; i < edges; i++) {transform( &enemy1[i], &physicEnemy, &objectEnemy[i]);}
+  
+    for (int i = 0; i < edges; i++) {
+      drawConstrainLine(objectEnemy[i].x, 
+                        objectEnemy[i].y, 
+                        objectEnemy[(i+1)%edges].x, 
+                        objectEnemy[(i+1)%edges].y, MAX_X-1, MAX_Y-1);
     }
   }
 
@@ -377,6 +414,18 @@ void CalcPos() {
   
 }
 
+void CalcPosEnemy() {
+  physicEnemy.xpos += physicEnemy.xvel;
+  //physic1.xpos = constrain(physic1.xpos, -(MAX_X / 2) , (MAX_X / 2) );
+  if (physicEnemy.xpos > UNIVERSE_X) {physicEnemy.xpos -= UNIVERSE_X * 2;};
+  if (physicEnemy.xpos < -UNIVERSE_X) {physicEnemy.xpos += UNIVERSE_X * 2;};
+  physicEnemy.ypos += physicEnemy.yvel;
+  //physic1.ypos = constrain(physic1.ypos, -(MAX_Y / 2) , (MAX_Y / 2) );
+  if (physicEnemy.ypos > UNIVERSE_Y) {physicEnemy.ypos -= UNIVERSE_Y * 2;};
+  if (physicEnemy.ypos < -UNIVERSE_Y) {physicEnemy.ypos += UNIVERSE_Y * 2;};
+  
+}
+
 void CalcBullets() {
   
   for (int i = 0; i < MAX_BULLETS; i++) {
@@ -414,17 +463,17 @@ void CalcBullets() {
 void CalcCam() {
   float deltax, deltay;
   deltax  = (physic2.xpos - physic1.xpos);
-  deltax  = constrain(deltax, -96, 96);               // follow the ship when distance is high
+  deltax  = constrain(deltax, -96, 96);                          // follow the ship when distance is high
   deltay  = (physic2.ypos - physic1.ypos);
-  deltay  = constrain(deltay, -96, 96);               // follow the ship when distance is high
+  deltay  = constrain(deltay, -96, 96);                          // follow the ship when distance is high
   cam.x   = physic1.xpos + (deltax / 2);
-  cam.y   = physic1.ypos + (deltay / 2);             // set cam between objects
+  cam.y   = physic1.ypos + (deltay / 2);                         // set cam between objects
   if (shakeCam) {cam.x += random(-3,3); cam.y += random(-2,2);}; // add shaking to scene
 
-  cam.zoom = 64 / max(abs(deltax) / 2, abs(deltay)); // calculate zoom based ob objects
-  cam.zoom /= 1.15;                                   // zoom out a bit
-  cam.zoom = (float) ((int) (1.5 * cam.zoom)) / 1.5; // with round for stepping zoom; coment out for continuous zoom
-  cam.zoom = constrain(cam.zoom, 0.3, 1.2);        // set upper and lower zoom limits
+  cam.zoom = 64 / max(abs(deltax) / 2, abs(deltay));             // calculate zoom based ob objects
+  cam.zoom /= 1.15;                                              // zoom out a bit
+  cam.zoom = (float) ((int) (1.5 * cam.zoom)) / 1.5;             // with round for stepping zoom; coment out for continuous zoom
+  cam.zoom = constrain(cam.zoom, 0.3, 1.2);                      // set upper and lower zoom limits
 }
 
 void loop() {
@@ -433,9 +482,10 @@ void loop() {
   CalcGravity();
   CalcVel();
   CalcPos();
+  CalcPosEnemy();
   CalcBullets();
   CalcCam();  
-
+  
 
   // blink thruster
   if (thrusterenabled) {
@@ -450,6 +500,8 @@ void loop() {
   for (int i = 0; i < edges; i++) {transform( &planet[i], &physic3, &object3[i]);}
   // thruster: transf each vertex to current values based on model and physical property: output is object4
   for (int i = 0; i < edges; i++) {transform( &thruster[i], &physic1, &object4[i]);}
+  // enemy
+  for (int i = 0; i < edges; i++) {transform( &enemy1[i], &physicEnemy, &objectEnemy[i]);}
 
   // draw bullets, dust
   for (int i = 0; i < MAX_BULLETS; i++) {if (bullet[i].isEnabled) {drawStar(bullet[i].xpos, bullet[i].ypos);}}
