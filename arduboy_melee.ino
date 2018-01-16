@@ -1,26 +1,25 @@
 /*
 author: Jens FROEBEL created: 2017-03-12 modified: 2017-04-19
-version poligone_004.ino
+version poligone_005.ino
 */
-#include "Arduboy.h"
-
+#include <Arduboy.h>
 Arduboy arduboy;
 
 /* TODO!
  * init camphy {x, y, zoom};
- * tranlate: x, y, scale --> transform();
- * 
+ * translate: x, y, scale --> transform();
+ * update to <Arduino2.h>
  * model + physic = object, make one common struct
+ * draw thruster on ship when button pressed, copy physic1 for thruster
+ * done: (arduboy.buttonpressed(A_BUTTON))?{xacc = sin(rot)*thrust;yacc = cos(rot)*thrust}:{xacc=0;yacc=0)
+ * done: xvel = constrain(0, maxspeed, xvel + xacc/timestep);
  * 
- * (arduboy.bottonpressed(A_BUTTON))?{xacc = sin(rot)*thrust;yacc = cos(rot)*thrust}:{xacc=0;yacc=0)
- * xvel = constrain(0, maxspeed, xvel + xacc/timestep);
- * 
- * takeAction(physc1) --> position, force
- * takeAction(physc2)
- * takeAction(physc3)
+ * takeAction(physic1) --> force, velocity, position --> physic1 for thruster
+ * takeAction(physic4) --> Enemy, turn to ship, trust, shoot
  * takeAction(cam) --> reset position
  * 
- * collision test
+ * collision test, use radius property
+ * shake cam
  */
 
 byte MAX_Y = 64;
@@ -32,13 +31,6 @@ byte KEYDELAY = 1;
 
 unsigned long lasttimestamp = 0;
 unsigned long  newtimestamp = 0;
-//int degree = 0;
-//int rot = 180;
-//int p1rot = 0;
-//int p2rot = 180;
-//float scale = 5;
-//float p1scale = 15;
-//float p2scale = 15*809/1000;
 float radian;
 int edges = 5;
 
@@ -46,6 +38,9 @@ struct model {float x, y;};
 
 model ship1[] = {{0,2},{-1,-1},{-0.5,-0.5},{0.5,-0.5},{1,-1}};
 model planet[] = {{0,-1},{-0.951, -0.309},{-0.588, 0.809},{0.588, 0.809}, {0.951, -0.309}};
+//model truster
+//model enemy1[] = {{}};
+
 model object1[] = {{0,0},{0,0},{0,0},{0,0},{0,0}};
 model object2[] = {{0,0},{0,0},{0,0},{0,0},{0,0}};
 model object3[] = {{0,0},{0,0},{0,0},{0,0},{0,0}};
@@ -58,23 +53,26 @@ struct property {
     bool enable;
 };
 
-property physic1 = { 1, 2,  5,          -9, 0, 0, 0, 0, 0, 180, 1}; // ship
-property physic2 = {10, 1, 10,          0, 0, 0, 0, 0, 0,   0, 1}; // outer pentagone
-property physic3 = {10, 1, 10*809/1000, 0, 0, 0, 0, 0, 0, 180, 1}; // inner pentagone
+property physic1 = { 1, 2,  5,          -32, 0, 0, 0, 0, 0, 180, 1}; // ship
+property physic2 = {10, 1, 10,          32, 8, 0, 0, 0, 0,   0, 1}; // outer pentagone
+property physic3 = {10, 1, 10*809/1000, 32, 8, 0, 0, 0, 0, 180, 1}; // inner pentagone
 
 
-void transform(struct model *pntr, struct model *outptr, float x, float y, int angle) {
+void transform(struct model *pntr, struct property *physic, struct model *outptr) {
   float sinrot, cosrot, tempox, tempoy;
-  sinrot = sin((angle) * PI / 180.0);
-  cosrot = cos((angle) * PI / 180.0);
+  sinrot = sin((physic->rot) * PI / 180.0);
+  cosrot = cos((physic->rot) * PI / 180.0);
   //printf("sin: %f cos: %f\n", sinrot, cosrot);
 
   // Coordinates Transformation ROTATE
   (*outptr).x     = ( (pntr->x) * cosrot) + ((pntr->y) * sinrot); 
     outptr->y     = (-(pntr->x) * sinrot) + ((pntr->y) * cosrot);
-  // Coordinates Transform Translation
-    outptr->x     =   (outptr->x) + x;
-    outptr->y     =   (outptr->y) + y;
+  // Coordinates Transformation SCALING
+    outptr->x     =   outptr->x * physic->scale;
+    outptr->y     =   outptr->y * physic->scale;
+  // Coordinates Transformation TRANSLATION
+    outptr->x     =   (outptr->x) + (physic->xpos);
+    outptr->y     =   (outptr->y) + (physic->ypos);
 }
 
 // output crossing point where x0
@@ -111,28 +109,28 @@ void drawConstrainLine(float x1, float y1, float x2, float y2, float w, float h)
 void draw(void) {  
   if (physic1.enable) {
      for (int i = 0; i < edges; i++) {
-        drawConstrainLine(physic1.scale*object1[i].x + 64, 
-                        physic1.scale*object1[i].y + 32, 
-                        physic1.scale*object1[(i+1)%edges].x + 64, 
-                        physic1.scale*object1[(i+1)%edges].y + 32, MAX_X-1, MAX_Y-1);
+        drawConstrainLine(object1[i].x + (MAX_X / 2), 
+                        object1[i].y + (MAX_Y / 2), 
+                        object1[(i+1)%edges].x + (MAX_X / 2), 
+                        object1[(i+1)%edges].y + (MAX_Y / 2), MAX_X-1, MAX_Y-1);
      }
   }
 
   if (physic2.enable) {
     for (int i = 0; i < edges; i++) {
-       drawConstrainLine(physic2.scale*object2[i].x + 64, 
-                        physic2.scale*object2[i].y + 32, 
-                        physic2.scale*object2[(i+1)%edges].x + 64, 
-                        physic2.scale*object2[(i+1)%edges].y + 32, MAX_X-1, MAX_Y-1);
+       drawConstrainLine(object2[i].x + (MAX_X / 2), 
+                        object2[i].y + (MAX_Y / 2), 
+                        object2[(i+1)%edges].x + (MAX_X / 2), 
+                        object2[(i+1)%edges].y + (MAX_Y / 2), MAX_X-1, MAX_Y-1);
     }
   }
 
   if (physic3.enable) {
     for (int i = 0; i < edges; i++) {
-      drawConstrainLine(physic3.scale*object3[i].x + 64, 
-                        physic3.scale*object3[i].y + 32, 
-                        physic3.scale*object3[(i+1)%edges].x + 64, 
-                        physic3.scale*object3[(i+1)%edges].y + 32, MAX_X-1, MAX_Y-1);
+      drawConstrainLine(object3[i].x + (MAX_X / 2), 
+                        object3[i].y + (MAX_Y / 2), 
+                        object3[(i+1)%edges].x + (MAX_X / 2), 
+                        object3[(i+1)%edges].y + (MAX_Y / 2), MAX_X-1, MAX_Y-1);
     }
   }  
 
@@ -161,8 +159,8 @@ void ButtonAction() {
 
   // Thuster!
   if(arduboy.pressed(A_BUTTON)) {
-    physic1.xacc = sin((physic1.rot) * PI / 180.0) / 1000;
-    physic1.yacc = cos((physic1.rot) * PI / 180.0) / 1000;
+    physic1.xacc = sin((physic1.rot) * PI / 180.0) / 100;
+    physic1.yacc = cos((physic1.rot) * PI / 180.0) / 100;
     } // A     --> acc = abs(1)
    else {
     physic1.xacc = 0;
@@ -172,20 +170,20 @@ void ButtonAction() {
 
 void CalcVel() {
   physic1.xvel += physic1.xacc;
-  physic1.xvel *= 0.99;
+  physic1.xvel *= 0.995;
   physic1.xvel = constrain(physic1.xvel, -1, 1);
 
   physic1.yvel += physic1.yacc;
-  physic1.yvel *= 0.99;
+  physic1.yvel *= 0.995;
   physic1.yvel = constrain(physic1.yvel, -1, 1);
   
 }
 
 void CalcPos() {
   physic1.xpos += physic1.xvel;
-  physic1.xpos = constrain(physic1.xpos, -64 / physic1.scale, 64 / physic1.scale);
+  physic1.xpos = constrain(physic1.xpos, -(MAX_X / 2) , (MAX_X / 2) );
   physic1.ypos += physic1.yvel;
-  physic1.ypos = constrain(physic1.ypos, -32 / physic1.scale, 32 / physic1.scale);
+  physic1.ypos = constrain(physic1.ypos, -(MAX_Y / 2) , (MAX_Y / 2) );
 }
 
 void loop() {
@@ -209,14 +207,14 @@ void loop() {
   --physic3.rot %= 360;
   // ship
   for (int i = 0; i < edges; i++) {
-    transform( &ship1[i], &object1[i], physic1.xpos, physic1.ypos, physic1.rot);
+    transform( &ship1[i], &physic1, &object1[i]);
   }
   // Planet
   for (int i = 0; i < edges; i++) {
-    transform( &planet[i], &object2[i], physic2.xpos, physic2.ypos, physic2.rot);
+    transform( &planet[i], &physic2, &object2[i]);
   }
   for (int i = 0; i < edges; i++) {
-    transform( &planet[i], &object3[i], physic3.xpos, physic3.ypos, physic3.rot);
+    transform( &planet[i], &physic3, &object3[i]);
   }
 
 
