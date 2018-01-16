@@ -1,6 +1,6 @@
 /*
-author: Jens FROEBEL created: 2017-03-12 modified: 2017-04-19
-version poligone_008.ino
+author: Jens FROEBEL created: 2017-03-12 modified: 2017-04-25
+version poligone_009.ino
 */
 #include <Arduboy.h>
 Arduboy arduboy;
@@ -16,12 +16,16 @@ Arduboy arduboy;
  * takeAction(physic4) --> Enemy, turn to ship, trust, shoot
  * bullets: xvel, yvel, xpos, ypos, enable, force, maxdistance, traveled
  * rocket:  xvel, yvel, xpos, ypos, xacc, yacc, enable, force, maxdistance, traveled, mass, rot, scale, 
- * bomb:    xvel, yvel, xpos, ypos, xacc, yacc, enable, force, mass, scale
+ * homing missile: transform position of enemy to missile orientation, then steer by resulting position
+ * bomb:    xvel, yvel, xpos, ypos, xacc, yacc, enable, force, mass, scale --> release (btn) and ignite (btn)
  * asteroid: model + physic-property
  * collision test, use radius property
  * done: blink thruster
  * draw explosion
  * save high score to PROGMEM
+ * show velocity
+ * show live gauge
+ * new algorithm for stars/dust --> maybe introduce 16 bit Fibonacci-LFSR
  * done: takeAction(physic1) --> gravity
  * done: define const Universe borders
  * done: cam follow ship in high distance
@@ -40,17 +44,15 @@ Arduboy arduboy;
 
 const byte MAX_Y = 64;
 const byte MAX_X = 128;
-//int x = MAX_X / 2;
-//int y = MAX_Y / 2;
-const byte KEYDELAY = 1;
 const byte MAX_STARS = 30;
+const byte MAX_BULLETS = 5;
+const int BULLET_TIME = 2000;
 const int UNIVERSE_X = MAX_X * 6;
 const int UNIVERSE_Y = MAX_Y * 6;
 //char text[16] = "Press Buttons!";;      //General string buffer
 
-unsigned long lasttimestamp = 0;
-unsigned long  newtimestamp = 0;
-//float radian;
+//unsigned long lasttimestamp = 0;
+//unsigned long  newtimestamp = 0;
 bool thrusterenabled = 0;
 bool shakeCam = 0;
 
@@ -81,6 +83,13 @@ property physic3 = {10, 1, 12*809/1000, 0, 0, 0, 0, 0, 0, 180, 1}; // inner pent
 
 int dust[MAX_STARS][2];
 //dot bullet[3];
+
+struct bul {
+  float xpos, ypos;
+  unsigned long int timestamp;
+  int rot;
+  bool isEnabled;
+} bullet[MAX_BULLETS];
 
 void drawStar(int xpos, int ypos) {
   float xdisp, ydisp;
@@ -202,21 +211,31 @@ void setup() {
   
   for (int i = 0; i < MAX_STARS; i++) {dust[i][0] = random(-UNIVERSE_X * 1.3, UNIVERSE_X * 1.3) ; dust[i][1] = random(-UNIVERSE_Y * 1.3, UNIVERSE_Y * 1.3);}
   //for (int i = 0; i < MAX_STARS; i++) {dust[i][0] = i; dust[i][1] = 0;}
+  for (int i = 0; i < MAX_BULLETS; i++) {bullet[i].isEnabled = 0;};
 
-
+u_int16t LFSR(u_int16t lfsr, int count) {
+bool lsb;
+for (int i = 0; i < count; i++) {
+        unsigned lsb = lfsr & 1;   /* Get LSB (i.e., the output bit). */
+        lfsr >>= 1;                /* Shift register */
+        if (lsb) {                 /* If the output bit is 1, apply toggle mask. */
+            lfsr ^= 0xB400u;
+        }
+    }
+  return lfsr;
 }
 
 void ButtonAction() {
   
-  if(arduboy.pressed(RIGHT_BUTTON))  {--physic1.rot %= 360; delay(KEYDELAY);}
-  if(arduboy.pressed(LEFT_BUTTON))   {++physic1.rot %= 360; delay(KEYDELAY);}
+  if(arduboy.pressed(RIGHT_BUTTON))  {--physic1.rot %= 360;}
+  if(arduboy.pressed(LEFT_BUTTON))   {++physic1.rot %= 360;}
   //if(arduboy.pressed(UP_BUTTON) && (scale < 80))      {scale *= 1.1; delay(KEYDELAY);}
   //if(arduboy.pressed(DOWN_BUTTON) && (scale > 1))  {scale /= 1.1; delay(KEYDELAY);}
   
-  if(arduboy.pressed(A_BUTTON)  &&  arduboy.pressed(B_BUTTON)) {arduboy.setRGBled(0xFF,0xFF,0x00);} // A + B --> yellow
+  //if(arduboy.pressed(A_BUTTON)  &&  arduboy.pressed(B_BUTTON)) {arduboy.setRGBled(0xFF,0xFF,0x00);} // A + B --> yellow
   //if(arduboy.pressed(A_BUTTON)  && !arduboy.pressed(B_BUTTON)) {arduboy.setRGBled(0x00,0x00,0x22);} // A     --> blue  
   //if(!arduboy.pressed(A_BUTTON) &&  arduboy.pressed(B_BUTTON)) {arduboy.setRGBled(0x00,0xFF,0x00);} // B     --> green
-  if(!arduboy.pressed(A_BUTTON) && !arduboy.pressed(B_BUTTON)) {arduboy.setRGBled(0x00,0x00,0x00);} // none  --> reset
+  //if(!arduboy.pressed(A_BUTTON) && !arduboy.pressed(B_BUTTON)) {arduboy.setRGBled(0x00,0x00,0x00);} // none  --> reset
 
   // Thruster!
   if(arduboy.pressed(A_BUTTON)) {
@@ -231,7 +250,10 @@ void ButtonAction() {
     };
 
   // ShakeCam
-  if(arduboy.pressed(B_BUTTON)) {shakeCam = 1;} else {shakeCam = 0;};
+  if(arduboy.pressed(DOWN_BUTTON)) {shakeCam = 1;} else {shakeCam = 0;};
+
+  // Trigger Bullet
+  //if(arduboy.pressed(B_BUTTON)) {bullet_triggered = 1; 
 
   // Rotate the Planet
   ++physic2.rot %= 360;
@@ -245,7 +267,7 @@ void CalcGravity() {
   disty = (physic1.ypos - physic2.ypos);
   //disty = constrain(disty, 10, 120);           // never zero, prevent
   distance2 = sq(constrain(abs(distx), 10, 256)) + sq(constrain(abs(disty), 10, 256));           // square of diagonal distance
-  distance  = sqrt(abs(distance2));
+  distance  = sqrt(distance2);
   gravity   = physic1.mass * physic2.mass / distance2;
 
   physic1.xacc -= gravity * distx / distance;
@@ -255,11 +277,11 @@ void CalcGravity() {
 
 void CalcVel() {
   physic1.xvel += physic1.xacc;
-  physic1.xvel *= 0.995;
+  physic1.xvel *= 0.997;
   physic1.xvel = constrain(physic1.xvel, -1, 1);
 
   physic1.yvel += physic1.yacc;
-  physic1.yvel *= 0.995;
+  physic1.yvel *= 0.997;
   physic1.yvel = constrain(physic1.yvel, -1, 1);
   
 }
