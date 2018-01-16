@@ -1,6 +1,6 @@
 /*
 author: Jens FROEBEL created: 2017-03-12 modified: 2017-04-25
-version poligone_009.ino
+version poligone_010.ino
 */
 #include <Arduboy.h>
 Arduboy arduboy;
@@ -11,7 +11,7 @@ Arduboy arduboy;
  * add Live Gauge to objects: ship, enemy, asteroid, planet
  * add pew pew sounds: tone()
  * update to <Arduino2.h>
- * model + physic = object, make one common struct
+ * model + physic = object, make one common struct or include model as pointer in physic
  * add parallax starfield
  * takeAction(physic4) --> Enemy, turn to ship, trust, shoot
  * bullets: xvel, yvel, xpos, ypos, enable, force, maxdistance, traveled
@@ -25,7 +25,10 @@ Arduboy arduboy;
  * save high score to PROGMEM
  * show velocity
  * show live gauge
- * new algorithm for stars/dust --> maybe introduce 16 bit Fibonacci-LFSR
+ * done: remove KEYDELAY
+ * remove scale property, maybe :-)
+ * more comments 
+ * new algorithm for stars/dust --> maybe introduce 16 bit Fibonacci-LFSR or Galois-LFSR
  * done: takeAction(physic1) --> gravity
  * done: define const Universe borders
  * done: cam follow ship in high distance
@@ -44,17 +47,21 @@ Arduboy arduboy;
 
 const byte MAX_Y = 64;
 const byte MAX_X = 128;
-const byte MAX_STARS = 30;
-const byte MAX_BULLETS = 5;
+const byte MAX_STARS = 20;
+const byte MAX_BULLETS = 3;
+const int BULLET_INTERVAL = 250;
 const int BULLET_TIME = 2000;
-const int UNIVERSE_X = MAX_X * 6;
-const int UNIVERSE_Y = MAX_Y * 6;
+const int UNIVERSE_X = MAX_X * 8;
+const int UNIVERSE_Y = MAX_Y * 4;
 //char text[16] = "Press Buttons!";;      //General string buffer
 
 //unsigned long lasttimestamp = 0;
 //unsigned long  newtimestamp = 0;
 bool thrusterenabled = 0;
 bool shakeCam = 0;
+bool fireEnabled = 0;
+long unsigned int lastBullet = 0;
+long unsigned int now = millis();
 
 const int edges = 5;
 struct model {float x, y;};
@@ -82,12 +89,10 @@ property physic2 = {10, 1, 12,          0, 0, 0, 0, 0, 0,   0, 1}; // outer pent
 property physic3 = {10, 1, 12*809/1000, 0, 0, 0, 0, 0, 0, 180, 1}; // inner pentagone
 
 int dust[MAX_STARS][2];
-//dot bullet[3];
 
-struct bul {
-  float xpos, ypos;
+struct projectile {
+  float xpos, ypos, xvel, yvel;
   unsigned long int timestamp;
-  int rot;
   bool isEnabled;
 } bullet[MAX_BULLETS];
 
@@ -200,6 +205,16 @@ void draw(void) {
 
 }
 
+uint16_t LFSR(uint16_t lfsr, int count) { // Galois LFSRs
+bool lsb;
+for (int i = 0; i < count; i++) {
+        lsb = lfsr & 1;              /* Get LSB (i.e., the output bit). */
+        lfsr >>= 1;                  /* Shift register */
+        if (lsb) {lfsr ^= 0xB400u;}  /* If the output bit is 1, apply toggle mask. */
+    }
+  return lfsr;
+}
+
 void setup() {
   //Serial.begin(9600);  
   // initiate arduboy instance
@@ -208,21 +223,15 @@ void setup() {
   //arduboy.setRGBled(0,32,32);
 
   // init Dustfield
+ 
+  // uint16_t start_state = 0xACE1u;  /* Any nonzero start state will work. */
   
   for (int i = 0; i < MAX_STARS; i++) {dust[i][0] = random(-UNIVERSE_X * 1.3, UNIVERSE_X * 1.3) ; dust[i][1] = random(-UNIVERSE_Y * 1.3, UNIVERSE_Y * 1.3);}
   //for (int i = 0; i < MAX_STARS; i++) {dust[i][0] = i; dust[i][1] = 0;}
+  
+  
   for (int i = 0; i < MAX_BULLETS; i++) {bullet[i].isEnabled = 0;};
 
-u_int16t LFSR(u_int16t lfsr, int count) {
-bool lsb;
-for (int i = 0; i < count; i++) {
-        unsigned lsb = lfsr & 1;   /* Get LSB (i.e., the output bit). */
-        lfsr >>= 1;                /* Shift register */
-        if (lsb) {                 /* If the output bit is 1, apply toggle mask. */
-            lfsr ^= 0xB400u;
-        }
-    }
-  return lfsr;
 }
 
 void ButtonAction() {
@@ -248,6 +257,13 @@ void ButtonAction() {
     physic1.yacc = 0;
     thrusterenabled = 0;
     };
+
+  // fire Bullet
+  if(arduboy.pressed(B_BUTTON)) {
+    if (now - lastBullet > BULLET_INTERVAL) {fireEnabled = 1;}   // delay between shots
+    else {fireEnabled = 0;}
+  }
+  else {fireEnabled = 0;}
 
   // ShakeCam
   if(arduboy.pressed(DOWN_BUTTON)) {shakeCam = 1;} else {shakeCam = 0;};
@@ -298,6 +314,40 @@ void CalcPos() {
   
 }
 
+void CalcBullets() {
+  
+  for (int i = 0; i < MAX_BULLETS; i++) {
+    if (bullet[i].isEnabled) {
+      if (now - bullet[i].timestamp > BULLET_TIME) {
+        bullet[i].isEnabled = 0;
+      }
+    }
+  }
+
+  if (fireEnabled) {
+    for (int i = 0; i < MAX_BULLETS; i++) {
+      if (!bullet[i].isEnabled) {
+        bullet[i].xvel = physic1.xvel + sin((physic1.rot) * PI / 180.0) * 2; // bullet velocity is ship.vel and ship.rot x bullet speed
+        bullet[i].xpos = physic1.xpos;                                       // set bullets.pos to ship.pos
+        bullet[i].yvel = physic1.yvel + cos((physic1.rot) * PI / 180.0) * 2;
+        bullet[i].ypos = physic1.ypos; 
+        bullet[i].timestamp = now;                                           // timestamp for lifetime of bullet or travel time
+        bullet[i].isEnabled = 1;                                             // bullet is in use
+        lastBullet = now;                                                    // this is for delay until next bullet
+        break;
+      }
+    }
+  }
+
+  for (int i = 0; i < MAX_BULLETS; i++) {
+    if (bullet[i].isEnabled) {
+      bullet[i].xpos += bullet[i].xvel;
+      bullet[i].ypos += bullet[i].yvel;
+      
+    };
+  };  
+}
+
 void CalcCam() {
   float deltax, deltay;
   deltax  = (physic2.xpos - physic1.xpos);
@@ -315,16 +365,17 @@ void CalcCam() {
 }
 
 void loop() {
-
+  now = millis();
   ButtonAction();
   CalcGravity();
   CalcVel();
   CalcPos();
+  CalcBullets();
   CalcCam();  
 
   // blink thruster
   if (thrusterenabled) {
-    thrusterenabled = ((millis() % 150) >= 100);
+    thrusterenabled = ((now % 150) >= 100);
   }
 
   // ship
@@ -336,8 +387,8 @@ void loop() {
   // thruster: transf each vertex to current values based on model and physical property: output is object4
   for (int i = 0; i < edges; i++) {transform( &thruster[i], &physic1, &object4[i]);}
 
-  // transform bullets, dust
-  //for (int i = 0; i < max_bullets; i++) {transform( &bullet[i], &bullet_physic[i], &object5[i]);}
+  // draw bullets, dust
+  for (int i = 0; i < MAX_BULLETS; i++) {if (bullet[i].isEnabled) {drawStar(bullet[i].xpos, bullet[i].ypos);}}
   for (int i = 0; i < MAX_STARS; i++) {drawStar( dust[i][0], dust[i][1]);}
 
   // pause render until it's time for the next frame
