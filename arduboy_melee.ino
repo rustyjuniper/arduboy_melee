@@ -1,6 +1,6 @@
 /*
 author: Jens FROEBEL created: 2017-03-12 modified: 2017-08-07
-version poligone_012.ino
+version poligone_013.ino
 */
 #include <Arduboy.h>
 Arduboy arduboy;
@@ -91,7 +91,7 @@ struct property { // property of an object
 property physic1 = { 1, 2,  5,       -128, 0,   0, 0,   0, 0,   180, 1}; // ship propeties
 property physic2 = {10, 1, 12,          0, 0,   0, 0,   0, 0,     0, 1}; // outer pentagone properties
 property physic3 = {10, 1, 12*809/1000, 0, 0,   0, 0,   0, 0,   180, 1}; // inner pentagone properties
-property physicEnemy = { 1, 1.5, 5,  +128, 0,   0,+1,   0, 0,     0, 1}; // enemy propeties
+property physicEnemy = { 1, 1.5, 5,  +128, 0,   0,+0.67,   0, 0,     0, 1}; // enemy propeties
 
 
 int dust[MAX_STARS][2]; // array of dust particles
@@ -191,6 +191,67 @@ void transform(struct model *pntr, struct property *physic, struct model *outptr
     outptr->x     +=  (MAX_X / 2);
     outptr->y     +=  (MAX_Y / 2);
     
+}
+
+int fastArcTan(float a, float b) {
+  float m = 0.0;
+  float absa = a; if (absa < 0) {absa *= -1;};
+  float absb = b; if (absb < 0) {absb *= -1;};
+  float atan = -1.0;
+  // a ist Gegenkathede,  b ist Ankathede 
+  if (absa < absb) {m = absa / absb;} else {m = absb / absa;};
+
+  // Polynom 2. Grades R2 = 0,9999
+  //atan = (60.619 * m) - (15.421 * m * m);
+  // Polynom 3. Grades R2 = 1
+  //atan = (58.825 * m) - (4.6852 * m * m * m) - (9.2673 * m * m);
+  // Linear m*x+c is faster ;-)
+  // two linear approximations are fitted and connect at m = 0.6
+  // modified for 0° and 90°
+  if (m < 0.6) {atan = 52.419 * m + 0.4999;} else {atan = 35.565 * m + 9.9253;};
+
+  // 1. + 4. Quadrant
+  if (a>=0) {
+    if (b>=0) {                                            // 1. Quadrant
+      if (absa > absb) { return (int) 0.5 + atan;}         //  0 .. 45     -->  45 .. 90
+      else { return (int) 90.5 - atan ;};                  // 45 .. 90     -->   0 .. 45
+    }
+    else {                                                 // 4. Quadrant
+      if (absa > absb) { return (int) 360.5 - atan;}       // 315 .. 360
+      else { return (int) 270.5 + atan;};                  // 270 .. 315
+    };
+  }
+  else { // 2. + 3. Quadrant
+    if (b>=0) {                                            // 2. Quadrant
+      if (absa > absb) { return (int) 180.5 - atan;}       // 135 .. 180
+      else { return (int) 90.5 + atan;};                   //  90 .. 135
+    }
+    else {                                                 // 3. Quadrant
+      if (absa > absb) { return (int) 180.5 + atan;}       // 180 .. 225
+      else { return (int) 270.5 - atan;};                  // 225 .. 270
+    };
+  };
+  return (int) -1;                                         // Fehler
+}
+
+
+
+int whereIsThat(struct property *me, struct property *that) {
+  // int angle;
+  // float tangens;
+  // float sinrot, cosrot;
+  // sinrot = sin((me->rot) * PI / 180.0); // calculate temporary sine
+  // cosrot = cos((me->rot) * PI / 180.0); // calculate temporary cosine
+
+  // relative Coordinates PAN
+  float diffx = (that->xpos) - (me->xpos);
+  float diffy = (that->ypos) - (me->ypos);
+ 
+  // Coordinates Transformation ROTATE
+  // diffx = ( (diffx) * cosrot) + ((diffy) * sinrot); 
+  // diffy = (-(diffx) * sinrot) + ((diffy) * cosrot);
+
+  return fastArcTan(diffx, diffy) + (me->rot);  
 }
 
 // output crossing point where x0
@@ -479,6 +540,7 @@ void CalcCam() {
 void loop() {
   now = millis();
   ButtonAction();
+  ++physicEnemy.rot %= 360;
   CalcGravity();
   CalcVel();
   CalcPos();
