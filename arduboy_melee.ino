@@ -1,20 +1,18 @@
 /*
 author: Jens FROEBEL created: 2017-03-12 modified: 2017-04-19
-version poligone_006.ino
+version poligone_007.ino
 */
 #include <Arduboy.h>
 Arduboy arduboy;
 
 /* TODOs!
- * autozoom cam to objects: ship, enemy, (planet) --> CalcCam()
- * takeAction(cam) --> set position based on objects
  * CalcPos with pointers
  * CalcVel with Pointers
  * add Live Gauge to objects: ship, enemy, asteroid, planet
  * add pew pew sounds: tone()
  * update to <Arduino2.h>
  * model + physic = object, make one common struct
- * add parallax starfield, or non parallax dustfield
+ * add parallax starfield
  * takeAction(physic1) --> gravity
  * takeAction(physic4) --> Enemy, turn to ship, trust, shoot
  * bullets: xvel, yvel, xpos, ypos, enable, force, maxdistance, traveled
@@ -22,30 +20,36 @@ Arduboy arduboy;
  * bomb:    xvel, yvel, xpos, ypos, xacc, yacc, enable, force, mass, scale
  * asteroid: model + physic-property
  * collision test, use radius property
- * effect: shake cam
  * draw explosion
  * save high score to PROGMEM
+ * done: autozoom cam to objects: ship, enemy, (planet) --> CalcCam()
+ * done: takeAction(cam) --> set position based on objects
+ * done: add non parallax dustfield
+ * done: draw dustfield directly without saving coordibates
  * done: init camphy {x, y, zoom};
  * done: takeAction(physic1) --> force, velocity, position --> physic1 for thruster
  * done: translate: x, y, scale --> transform();
  * done: draw thruster on ship when button pressed, copy physic1 for thruster
  * done: (arduboy.buttonpressed(A_BUTTON))?{xacc = sin(rot)*thrust;yacc = cos(rot)*thrust}:{xacc=0;yacc=0)
  * done: xvel = constrain(0, maxspeed, xvel + xacc/timestep);
+ * done: effect: shake cam
  */
 
-byte MAX_Y = 64;
-byte MAX_X = 128;
-int x = MAX_X / 2;
-int y = MAX_Y / 2;
-byte KEYDELAY = 1;
+const byte MAX_Y = 64;
+const byte MAX_X = 128;
+//int x = MAX_X / 2;
+//int y = MAX_Y / 2;
+const byte KEYDELAY = 1;
+const byte MAX_STARS = 10;
 //char text[16] = "Press Buttons!";;      //General string buffer
 
 unsigned long lasttimestamp = 0;
 unsigned long  newtimestamp = 0;
-float radian;
+//float radian;
 bool thrusterenabled = 0;
-int edges = 5;
+bool shakeCam = 0;
 
+const int edges = 5;
 struct model {float x, y;};
 struct camproperty {float x, y, zoom;} cam = {0, 0, 0.75};
 
@@ -67,15 +71,31 @@ struct property {
 };
 
 property physic1 = { 1, 2,  5,          -64, 0, 0, 0, 0, 0, 180, 1}; // ship
-property physic2 = {10, 1, 10,          0, 16, 0, 0, 0, 0,   0, 1}; // outer pentagone
-property physic3 = {10, 1, 10*809/1000, 0, 16, 0, 0, 0, 0, 180, 1}; // inner pentagone
+property physic2 = {10, 1, 15,          0, 0, 0, 0, 0, 0,   0, 1}; // outer pentagone
+property physic3 = {10, 1, 14*809/1000, 0, 0, 0, 0, 0, 0, 180, 1}; // inner pentagone
 
+int dust[MAX_STARS][2];
+//dot bullet[3];
+
+void drawStar(int xpos, int ypos) {
+  float xdisp, ydisp;
+  
+  // Coordinates Transformation by 1st Cam Pan and then 2nd Zoom
+    xdisp     =   (xpos) - (cam.x);
+    ydisp     =   (ypos) - (cam.y);
+    xdisp     =   (xdisp) * (cam.zoom) + (MAX_X / 2);
+    ydisp     =   (ydisp) * (cam.zoom) + (MAX_Y / 2);
+  
+      if (xdisp < 128 && xdisp >= 0 && ydisp < 64 && ydisp >= 0) {
+          arduboy.drawPixel((int) xdisp, (int) ydisp, WHITE);
+          //arduboy.drawCircle((int) xdisp, (int) ydisp, 2, WHITE);
+      }
+}
 
 void transform(struct model *pntr, struct property *physic, struct model *outptr) {
-  float sinrot, cosrot, tempox, tempoy;
-  sinrot = sin((physic->rot) * PI / 180.0);
-  cosrot = cos((physic->rot) * PI / 180.0);
-  //printf("sin: %f cos: %f\n", sinrot, cosrot);
+  float sinrot, cosrot;
+  sinrot = sin((physic->rot) * PI / 180.0); // calculate temporary sine
+  cosrot = cos((physic->rot) * PI / 180.0); // calculate temporary cosine
 
   // Coordinates Transformation ROTATE
   (*outptr).x     = ( (pntr->x) * cosrot) + ((pntr->y) * sinrot); 
@@ -91,6 +111,8 @@ void transform(struct model *pntr, struct property *physic, struct model *outptr
     outptr->y     =   (outptr->y) - (cam.y);
     outptr->x     =   (outptr->x) * (cam.zoom);
     outptr->y     =   (outptr->y) * (cam.zoom);
+    outptr->x     +=  (MAX_X / 2);
+    outptr->y     +=  (MAX_Y / 2);
     
 }
 
@@ -128,39 +150,40 @@ void drawConstrainLine(float x1, float y1, float x2, float y2, float w, float h)
 void draw(void) {  
   if (physic1.enable) {
      for (int i = 0; i < edges; i++) {
-        drawConstrainLine(object1[i].x + (MAX_X / 2), 
-                        object1[i].y + (MAX_Y / 2), 
-                        object1[(i+1)%edges].x + (MAX_X / 2), 
-                        object1[(i+1)%edges].y + (MAX_Y / 2), MAX_X-1, MAX_Y-1);
+        drawConstrainLine(object1[i].x, 
+                        object1[i].y, 
+                        object1[(i+1)%edges].x, 
+                        object1[(i+1)%edges].y, MAX_X-1, MAX_Y-1);
      }
   }
 
   if (physic2.enable) {
     for (int i = 0; i < edges; i++) {
-       drawConstrainLine(object2[i].x + (MAX_X / 2), 
-                        object2[i].y + (MAX_Y / 2), 
-                        object2[(i+1)%edges].x + (MAX_X / 2), 
-                        object2[(i+1)%edges].y + (MAX_Y / 2), MAX_X-1, MAX_Y-1);
+       drawConstrainLine(object2[i].x, 
+                        object2[i].y, 
+                        object2[(i+1)%edges].x, 
+                        object2[(i+1)%edges].y, MAX_X-1, MAX_Y-1);
     }
   }
 
   if (physic3.enable) {
     for (int i = 0; i < edges; i++) {
-      drawConstrainLine(object3[i].x + (MAX_X / 2), 
-                        object3[i].y + (MAX_Y / 2), 
-                        object3[(i+1)%edges].x + (MAX_X / 2), 
-                        object3[(i+1)%edges].y + (MAX_Y / 2), MAX_X-1, MAX_Y-1);
+      drawConstrainLine(object3[i].x, 
+                        object3[i].y, 
+                        object3[(i+1)%edges].x, 
+                        object3[(i+1)%edges].y, MAX_X-1, MAX_Y-1);
     }
   }  
 
   if (thrusterenabled) {
     for (int i = 0; i < edges; i++) {
-      drawConstrainLine(object4[i].x + (MAX_X / 2), 
-                        object4[i].y + (MAX_Y / 2), 
-                        object4[(i+1)%edges].x + (MAX_X / 2), 
-                        object4[(i+1)%edges].y + (MAX_Y / 2), MAX_X-1, MAX_Y-1);
+      drawConstrainLine(object4[i].x, 
+                        object4[i].y, 
+                        object4[(i+1)%edges].x, 
+                        object4[(i+1)%edges].y, MAX_X-1, MAX_Y-1);
     }
   }
+
 }
 
 void setup() {
@@ -169,6 +192,13 @@ void setup() {
   arduboy.beginNoLogo();
   arduboy.setFrameRate(30);
   //arduboy.setRGBled(0,32,32);
+
+  // init Dustfield
+  
+  for (int i = 0; i < MAX_STARS; i++) {dust[i][0] = random(MAX_X * 8) - (MAX_X * 4); dust[i][1] = random(MAX_Y * 4) - (MAX_Y * 2);}
+  //for (int i = 0; i < MAX_STARS; i++) {dust[i][0] = i; dust[i][1] = 0;}
+
+
 }
 
 void ButtonAction() {
@@ -180,7 +210,7 @@ void ButtonAction() {
   
   if(arduboy.pressed(A_BUTTON)  &&  arduboy.pressed(B_BUTTON)) {arduboy.setRGBled(0xFF,0xFF,0x00);} // A + B --> yellow
   //if(arduboy.pressed(A_BUTTON)  && !arduboy.pressed(B_BUTTON)) {arduboy.setRGBled(0x00,0x00,0x22);} // A     --> blue  
-  if(!arduboy.pressed(A_BUTTON) &&  arduboy.pressed(B_BUTTON)) {arduboy.setRGBled(0x00,0xFF,0x00);} // B     --> green
+  //if(!arduboy.pressed(A_BUTTON) &&  arduboy.pressed(B_BUTTON)) {arduboy.setRGBled(0x00,0xFF,0x00);} // B     --> green
   if(!arduboy.pressed(A_BUTTON) && !arduboy.pressed(B_BUTTON)) {arduboy.setRGBled(0x00,0x00,0x00);} // none  --> reset
 
   // Thruster!
@@ -194,6 +224,9 @@ void ButtonAction() {
     physic1.yacc = 0;
     thrusterenabled = 0;
     };
+
+  // ShakeCam
+  if(arduboy.pressed(B_BUTTON)) {shakeCam = 1;} else {shakeCam = 0;};
 
   // Rotate the Planet
   ++physic2.rot %= 360;
@@ -229,10 +262,11 @@ void CalcCam() {
   deltay  = (physic2.ypos - physic1.ypos);
   cam.x   = physic1.xpos + (deltax / 2);
   cam.y   = physic1.ypos + (deltay / 2);             // set cam between objects
+  if (shakeCam) {cam.x += random(-2,2); cam.y += random(-2,2);}; // add shaking to scene
   cam.zoom = 64 / max(abs(deltax) / 2, abs(deltay)); // calculate zoom based ob objects
-  cam.zoom /= 1.1;                                   // zoom out
+  cam.zoom /= 1.15;                                   // zoom out a bit
   cam.zoom = (float) ((int) (1.5 * cam.zoom)) / 1.5; // with round for stepping zoom; coment out for continuous zoom
-  cam.zoom = constrain(cam.zoom, 0.25, 1.25);        // set upper and lower zoom limits
+  cam.zoom = constrain(cam.zoom, 0.3, 1.2);        // set upper and lower zoom limits
 }
 
 void loop() {
@@ -250,9 +284,10 @@ void loop() {
   for (int i = 0; i < edges; i++) {transform( &planet[i], &physic3, &object3[i]);}
   // thruster: transf each vertex to current values based on model and physical property: output is object4
   for (int i = 0; i < edges; i++) {transform( &thruster[i], &physic1, &object4[i]);}
-  // transform bullets
+
+  // transform bullets, dust
   //for (int i = 0; i < max_bullets; i++) {transform( &bullet[i], &bullet_physic[i], &object5[i]);}
-  
+  for (int i = 0; i < MAX_STARS; i++) {drawStar( dust[i][0], dust[i][1]);}
 
   // pause render until it's time for the next frame
   if (!(arduboy.nextFrame()))
@@ -266,6 +301,7 @@ void loop() {
   //arduboy.drawFastVLine(x, 5, MAX_Y-11, WHITE);
   //arduboy.drawFastHLine(5, y, MAX_X-11, WHITE);
   //arduboy.drawLine(0, 0, x, y, WHITE);
+  //arduboy.drawCircle(64, 32, 8, WHITE);
   arduboy.display();
 
 }
