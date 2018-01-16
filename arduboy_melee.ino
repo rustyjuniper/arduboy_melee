@@ -1,19 +1,19 @@
 /*
 author: Jens FROEBEL created: 2017-03-12 modified: 2017-10-29
-version poligone_014.ino
+version poligone_015.ino
 */
 #include <Arduboy.h>
 Arduboy arduboy;
 
 /* TODOs!
- * use a model as partial circle to indicate enemy or hit, has property of ship and additional angle
+ * done; use a model as partial circle to indicate enemy or hit, has property of ship and additional angle
  * done: fast arctan
- * add Live Gauge to objects: ship, enemy, asteroid, planet
+ * done: add Live Gauge to objects: ship, enemy, asteroid, planet
  * add pew pew sounds: tone()
  * update to <Arduino2.h>
  * model + physic = object, make one common struct or include model as pointer in physic
  * add parallax starfield
- * takeAction(physic4) --> Enemy, turn to ship, trust, shoot
+ * !!! takeAction(physic4) --> Enemy, turn to ship, trust, shoot
  * bullets: xvel, yvel, xpos, ypos, enable, force, maxdistance, traveled
  * rocket:  xvel, yvel, xpos, ypos, xacc, yacc, enable, force, maxdistance, traveled, mass, rot, scale, 
  * homing missile: transform position of enemy to missile orientation, then steer by resulting position
@@ -23,7 +23,7 @@ Arduboy arduboy;
  * draw explosion
  * save high score to PROGMEM
  * show live gauge
- * remove scale property in struct model, maybe :-)
+ * rejected: remove scale property in struct model, maybe :-)
  * new algorithm for stars/dust --> maybe introduce 16 bit Fibonacci-LFSR or Galois-LFSR
  * done: blink thruster
  * done: show velocity
@@ -63,7 +63,7 @@ const int UNIVERSE_Y = MAX_Y * 4;         // y size of this world
 //unsigned long  newtimestamp = 0;
 bool thrusterenabled = 0;                 // define global bool for thruster
 bool shakeCam = 0;                        // define global bool for the shake effect
-bool fireEnabled = 0;                     // ?
+bool fireEnabled = 0;                     // to control firemax and fire speed
 long unsigned int lastBullet = 0;         // count of shot bullets
 long unsigned int now = millis();         // copy of current timestamp
 
