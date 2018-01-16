@@ -1,11 +1,4 @@
 
-int dust[MAX_STARS][2]; // array of dust particles
-
-struct projectile {  // struct of bullets, has no acceleration, no rotation
-  float xpos, ypos, xvel, yvel;
-  unsigned long int timestamp; // timestamp of ignition - for time to life
-  bool isEnabled;
-} bullet[MAX_BULLETS];
 
 void drawStar(int xpos, int ypos) {
   float xdisp, ydisp;

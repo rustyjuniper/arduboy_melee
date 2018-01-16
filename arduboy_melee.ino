@@ -47,11 +47,20 @@ struct property { // property of an object
     bool enable;
 };
 
+struct projectile {  // struct of bullets, has no acceleration, no rotation
+  float xpos, ypos, xvel, yvel;
+  unsigned long int timestamp; // timestamp of ignition - for time to life
+  bool isEnabled;
+} bullet[MAX_BULLETS];
+
 //                   m  r   s          xp yp   xv yv   xa ya      r  e
 property physic1 = { 1, 2,  5,       -128, 0,   0, 0,   0, 0,   180, 1}; // ship propeties
 property physic2 = {10, 1, 12,          0, 0,   0, 0,   0, 0,     0, 1}; // outer pentagone properties
 property physic3 = {10, 1, 12*809/1000, 0, 0,   0, 0,   0, 0,   180, 1}; // inner pentagone properties
 property physicEnemy = { 1, 1.5, 5,  +128, 0,   0,+0.67,   0, 0,     0, 1}; // enemy propeties
+
+int dust[MAX_STARS][2]; // array of dust particles
+
 
 /*
 uint16_t LFSR(uint16_t lfsr, int count) { // Galois LFSRs
