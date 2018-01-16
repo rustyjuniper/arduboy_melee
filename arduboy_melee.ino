@@ -1,25 +1,36 @@
 /*
 author: Jens FROEBEL created: 2017-03-12 modified: 2017-04-19
-version poligone_005.ino
+version poligone_006.ino
 */
 #include <Arduboy.h>
 Arduboy arduboy;
 
-/* TODO!
- * init camphy {x, y, zoom};
- * translate: x, y, scale --> transform();
+/* TODOs!
+ * autozoom cam to objects: ship, enemy, (planet) --> CalcCam()
+ * takeAction(cam) --> set position based on objects
+ * CalcPos with pointers
+ * CalcVel with Pointers
+ * add Live Gauge to objects: ship, enemy, asteroid, planet
+ * add pew pew sounds: tone()
  * update to <Arduino2.h>
  * model + physic = object, make one common struct
- * draw thruster on ship when button pressed, copy physic1 for thruster
+ * add parallax starfield, or non parallax dustfield
+ * takeAction(physic1) --> gravity
+ * takeAction(physic4) --> Enemy, turn to ship, trust, shoot
+ * bullets: xvel, yvel, xpos, ypos, enable, force, maxdistance, traveled
+ * rocket:  xvel, yvel, xpos, ypos, xacc, yacc, enable, force, maxdistance, traveled, mass, rot, scale, 
+ * bomb:    xvel, yvel, xpos, ypos, xacc, yacc, enable, force, mass, scale
+ * asteroid: model + physic-property
+ * collision test, use radius property
+ * effect: shake cam
+ * draw explosion
+ * save high score to PROGMEM
+ * done: init camphy {x, y, zoom};
+ * done: takeAction(physic1) --> force, velocity, position --> physic1 for thruster
+ * done: translate: x, y, scale --> transform();
+ * done: draw thruster on ship when button pressed, copy physic1 for thruster
  * done: (arduboy.buttonpressed(A_BUTTON))?{xacc = sin(rot)*thrust;yacc = cos(rot)*thrust}:{xacc=0;yacc=0)
  * done: xvel = constrain(0, maxspeed, xvel + xacc/timestep);
- * 
- * takeAction(physic1) --> force, velocity, position --> physic1 for thruster
- * takeAction(physic4) --> Enemy, turn to ship, trust, shoot
- * takeAction(cam) --> reset position
- * 
- * collision test, use radius property
- * shake cam
  */
 
 byte MAX_Y = 64;
@@ -32,19 +43,21 @@ byte KEYDELAY = 1;
 unsigned long lasttimestamp = 0;
 unsigned long  newtimestamp = 0;
 float radian;
+bool thrusterenabled = 0;
 int edges = 5;
 
 struct model {float x, y;};
+struct camproperty {float x, y, zoom;} cam = {0, 0, 0.75};
 
 model ship1[] = {{0,2},{-1,-1},{-0.5,-0.5},{0.5,-0.5},{1,-1}};
 model planet[] = {{0,-1},{-0.951, -0.309},{-0.588, 0.809},{0.588, 0.809}, {0.951, -0.309}};
-//model truster
+model thruster[] = {{0,-3},{1,-2},{0.5,-1},{-0.5,-1},{-1,-2}};
 //model enemy1[] = {{}};
 
 model object1[] = {{0,0},{0,0},{0,0},{0,0},{0,0}};
 model object2[] = {{0,0},{0,0},{0,0},{0,0},{0,0}};
 model object3[] = {{0,0},{0,0},{0,0},{0,0},{0,0}};
-
+model object4[] = {{0,0},{0,0},{0,0},{0,0},{0,0}};
 
 struct property {
     float mass, radius, scale; 
@@ -53,9 +66,9 @@ struct property {
     bool enable;
 };
 
-property physic1 = { 1, 2,  5,          -32, 0, 0, 0, 0, 0, 180, 1}; // ship
-property physic2 = {10, 1, 10,          32, 8, 0, 0, 0, 0,   0, 1}; // outer pentagone
-property physic3 = {10, 1, 10*809/1000, 32, 8, 0, 0, 0, 0, 180, 1}; // inner pentagone
+property physic1 = { 1, 2,  5,          -64, 0, 0, 0, 0, 0, 180, 1}; // ship
+property physic2 = {10, 1, 10,          0, 16, 0, 0, 0, 0,   0, 1}; // outer pentagone
+property physic3 = {10, 1, 10*809/1000, 0, 16, 0, 0, 0, 0, 180, 1}; // inner pentagone
 
 
 void transform(struct model *pntr, struct property *physic, struct model *outptr) {
@@ -68,11 +81,17 @@ void transform(struct model *pntr, struct property *physic, struct model *outptr
   (*outptr).x     = ( (pntr->x) * cosrot) + ((pntr->y) * sinrot); 
     outptr->y     = (-(pntr->x) * sinrot) + ((pntr->y) * cosrot);
   // Coordinates Transformation SCALING
-    outptr->x     =   outptr->x * physic->scale;
-    outptr->y     =   outptr->y * physic->scale;
+    outptr->x     =   (outptr->x) * (physic->scale);
+    outptr->y     =   (outptr->y) * (physic->scale);
   // Coordinates Transformation TRANSLATION
     outptr->x     =   (outptr->x) + (physic->xpos);
     outptr->y     =   (outptr->y) + (physic->ypos);
+  // Coordinates Transformation by 1st Cam Pan and then 2nd Zoom
+    outptr->x     =   (outptr->x) - (cam.x);
+    outptr->y     =   (outptr->y) - (cam.y);
+    outptr->x     =   (outptr->x) * (cam.zoom);
+    outptr->y     =   (outptr->y) * (cam.zoom);
+    
 }
 
 // output crossing point where x0
@@ -134,8 +153,15 @@ void draw(void) {
     }
   }  
 
+  if (thrusterenabled) {
+    for (int i = 0; i < edges; i++) {
+      drawConstrainLine(object4[i].x + (MAX_X / 2), 
+                        object4[i].y + (MAX_Y / 2), 
+                        object4[(i+1)%edges].x + (MAX_X / 2), 
+                        object4[(i+1)%edges].y + (MAX_Y / 2), MAX_X-1, MAX_Y-1);
+    }
+  }
 }
-
 
 void setup() {
   //Serial.begin(9600);  
@@ -153,19 +179,25 @@ void ButtonAction() {
   //if(arduboy.pressed(DOWN_BUTTON) && (scale > 1))  {scale /= 1.1; delay(KEYDELAY);}
   
   if(arduboy.pressed(A_BUTTON)  &&  arduboy.pressed(B_BUTTON)) {arduboy.setRGBled(0xFF,0xFF,0x00);} // A + B --> yellow
-  if(arduboy.pressed(A_BUTTON)  && !arduboy.pressed(B_BUTTON)) {arduboy.setRGBled(0x00,0x00,0x22);} // A     --> blue  
+  //if(arduboy.pressed(A_BUTTON)  && !arduboy.pressed(B_BUTTON)) {arduboy.setRGBled(0x00,0x00,0x22);} // A     --> blue  
   if(!arduboy.pressed(A_BUTTON) &&  arduboy.pressed(B_BUTTON)) {arduboy.setRGBled(0x00,0xFF,0x00);} // B     --> green
   if(!arduboy.pressed(A_BUTTON) && !arduboy.pressed(B_BUTTON)) {arduboy.setRGBled(0x00,0x00,0x00);} // none  --> reset
 
-  // Thuster!
+  // Thruster!
   if(arduboy.pressed(A_BUTTON)) {
     physic1.xacc = sin((physic1.rot) * PI / 180.0) / 100;
     physic1.yacc = cos((physic1.rot) * PI / 180.0) / 100;
+    thrusterenabled = 1;
     } // A     --> acc = abs(1)
    else {
     physic1.xacc = 0;
     physic1.yacc = 0;
+    thrusterenabled = 0;
     };
+
+  // Rotate the Planet
+  ++physic2.rot %= 360;
+  --physic3.rot %= 360;
 }
 
 void CalcVel() {
@@ -181,9 +213,26 @@ void CalcVel() {
 
 void CalcPos() {
   physic1.xpos += physic1.xvel;
-  physic1.xpos = constrain(physic1.xpos, -(MAX_X / 2) , (MAX_X / 2) );
+  //physic1.xpos = constrain(physic1.xpos, -(MAX_X / 2) , (MAX_X / 2) );
+  if (physic1.xpos > MAX_X * 2) {physic1.xpos -= MAX_X * 4;};
+  if (physic1.xpos < -MAX_X * 2) {physic1.xpos += MAX_X * 4;};
   physic1.ypos += physic1.yvel;
-  physic1.ypos = constrain(physic1.ypos, -(MAX_Y / 2) , (MAX_Y / 2) );
+  //physic1.ypos = constrain(physic1.ypos, -(MAX_Y / 2) , (MAX_Y / 2) );
+  if (physic1.ypos > MAX_Y * 2) {physic1.ypos -= MAX_Y * 4;};
+  if (physic1.ypos < -MAX_Y * 2) {physic1.ypos += MAX_Y * 4;};
+  
+}
+
+void CalcCam() {
+  float deltax, deltay;
+  deltax  = (physic2.xpos - physic1.xpos);
+  deltay  = (physic2.ypos - physic1.ypos);
+  cam.x   = physic1.xpos + (deltax / 2);
+  cam.y   = physic1.ypos + (deltay / 2);             // set cam between objects
+  cam.zoom = 64 / max(abs(deltax) / 2, abs(deltay)); // calculate zoom based ob objects
+  cam.zoom /= 1.1;                                   // zoom out
+  cam.zoom = (float) ((int) (1.5 * cam.zoom)) / 1.5; // with round for stepping zoom; coment out for continuous zoom
+  cam.zoom = constrain(cam.zoom, 0.25, 1.25);        // set upper and lower zoom limits
 }
 
 void loop() {
@@ -191,33 +240,18 @@ void loop() {
   ButtonAction();
   CalcVel();
   CalcPos();
+  CalcCam();  
 
-  /*
-  if(arduboy.pressed(A_BUTTON)) {
-    Serial.println("Hello"); 
-    for (int i = 0; i < edges; i++) {
-     Serial.print(int(scale * object1[i].x + 64));
-      Serial.print(" ");
-      Serial.println(int(scale * object1[i].y + 32));
-     }
-    delay(500);
-  }
-  */
-  ++physic2.rot %= 360;
-  --physic3.rot %= 360;
   // ship
-  for (int i = 0; i < edges; i++) {
-    transform( &ship1[i], &physic1, &object1[i]);
-  }
-  // Planet
-  for (int i = 0; i < edges; i++) {
-    transform( &planet[i], &physic2, &object2[i]);
-  }
-  for (int i = 0; i < edges; i++) {
-    transform( &planet[i], &physic3, &object3[i]);
-  }
-
-
+  for (int i = 0; i < edges; i++) {transform( &ship1[i], &physic1, &object1[i]);}
+  // Planet outer pentagone
+  for (int i = 0; i < edges; i++) {transform( &planet[i], &physic2, &object2[i]);}
+  // Planet inner pentagone
+  for (int i = 0; i < edges; i++) {transform( &planet[i], &physic3, &object3[i]);}
+  // thruster: transf each vertex to current values based on model and physical property: output is object4
+  for (int i = 0; i < edges; i++) {transform( &thruster[i], &physic1, &object4[i]);}
+  // transform bullets
+  //for (int i = 0; i < max_bullets; i++) {transform( &bullet[i], &bullet_physic[i], &object5[i]);}
   
 
   // pause render until it's time for the next frame
@@ -225,9 +259,9 @@ void loop() {
     return
   arduboy.clear();
   //arduboy.fillScreen(BLACK);
-
   draw();
-  
+
+  //arduboy.drawPixel(64, 32, WHITE);
   //arduboy.drawRoundRect(0, 0, MAX_X, MAX_Y, 4, WHITE);
   //arduboy.drawFastVLine(x, 5, MAX_Y-11, WHITE);
   //arduboy.drawFastHLine(5, y, MAX_X-11, WHITE);
