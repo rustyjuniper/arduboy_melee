@@ -40,6 +40,7 @@ model object3[] = {{0,0},{0,0},{0,0},{0,0},{0,0}}; // inner planet
 model object4[] = {{0,0},{0,0},{0,0},{0,0},{0,0}}; // thruster
 model objectEnemy[] = {{0,0},{0,0},{0,0},{0,0},{0,0}}; // enemy
 model objectindi1[] = {{0,0},{0,0},{0,0},{0,0},{0,0}}; // enemy indicator
+
 struct property { // property of an object
     float mass, radius, scale; // mass for gravity, radius for collision, scale for reshaping by scale
     float xpos, ypos, xvel, yvel, xacc, yacc;
@@ -60,7 +61,6 @@ property physic3 = {10, 1, 12*809/1000, 0, 0,   0, 0,   0, 0,   180, 1}; // inne
 property physicEnemy = { 1, 1.5, 5,  +128, 0,   0,+0.67,   0, 0,     0, 1}; // enemy propeties
 
 int dust[MAX_STARS][2]; // array of dust particles
-
 
 /*
 uint16_t LFSR(uint16_t lfsr, int count) { // Galois LFSRs

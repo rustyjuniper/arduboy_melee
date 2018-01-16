@@ -1,5 +1,3 @@
-
-
 void drawStar(int xpos, int ypos) {
   float xdisp, ydisp;
   
