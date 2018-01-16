@@ -1,11 +1,13 @@
 /*
-author: Jens FROEBEL created: 2017-03-12 modified: 2017-08-07
-version poligone_013.ino
+author: Jens FROEBEL created: 2017-03-12 modified: 2017-10-29
+version poligone_014.ino
 */
 #include <Arduboy.h>
 Arduboy arduboy;
 
 /* TODOs!
+ * use a model as partial circle to indicate enemy or hit, has property of ship and additional angle
+ * done: fast arctan
  * add Live Gauge to objects: ship, enemy, asteroid, planet
  * add pew pew sounds: tone()
  * update to <Arduino2.h>
@@ -73,13 +75,15 @@ model ship1[] = {{0,2},{-1,-1},{-0.5,-0.5},{0.5,-0.5},{1,-1}}; // model of my sp
 model planet[] = {{0,-1},{-0.951, -0.309},{-0.588, 0.809},{0.588, 0.809}, {0.951, -0.309}}; // model of the planet, pentagone
 model thruster[] = {{0,-3},{1,-2},{0.5,-1},{-0.5,-1},{-1,-2}}; // model of thruster fire
 model enemy1[] = {{0,1.5},{0.5,1},{0.5,-1.5},{-0.5,-1.5},{-0.5,1}};
+model indicator[] = {{0,6},{-3,5},{-1,5.5},{1,5.5},{3,5}};
 
+// template for calculating the objects
 model object1[] = {{0,0},{0,0},{0,0},{0,0},{0,0}}; // template for an object with 5 vertices
 model object2[] = {{0,0},{0,0},{0,0},{0,0},{0,0}}; // outer planet
 model object3[] = {{0,0},{0,0},{0,0},{0,0},{0,0}}; // inner planet
 model object4[] = {{0,0},{0,0},{0,0},{0,0},{0,0}}; // thruster
 model objectEnemy[] = {{0,0},{0,0},{0,0},{0,0},{0,0}}; // enemy
-
+model objectindi1[] = {{0,0},{0,0},{0,0},{0,0},{0,0}}; // enemy indicator
 struct property { // property of an object
     float mass, radius, scale; // mass for gravity, radius for collision, scale for reshaping by scale
     float xpos, ypos, xvel, yvel, xacc, yacc;
@@ -234,8 +238,6 @@ int fastArcTan(float a, float b) {
   return (int) -1;                                         // Fehler
 }
 
-
-
 int whereIsThat(struct property *me, struct property *that) {
   // int angle;
   // float tangens;
@@ -251,7 +253,8 @@ int whereIsThat(struct property *me, struct property *that) {
   // diffx = ( (diffx) * cosrot) + ((diffy) * sinrot); 
   // diffy = (-(diffx) * sinrot) + ((diffy) * cosrot);
 
-  return fastArcTan(diffx, diffy) + (me->rot);  
+  //return fastArcTan(diffx, diffy) + (me->rot);  
+  return fastArcTan(diffx, diffy);  
 }
 
 // output crossing point where x0
@@ -363,6 +366,18 @@ void draw(void) {
                         objectEnemy[(i+1)%edges].x, 
                         objectEnemy[(i+1)%edges].y, MAX_X-1, MAX_Y-1);
     }
+  }
+
+  if (physicEnemy.enable) {
+  // model is          objectindi1; 
+  // physics is        physicShip
+  // EnemyIndicator    
+      for (int i = 0; i < edges; i++) {
+      drawConstrainLine(objectindi1[i].x, 
+                        objectindi1[i].y, 
+                        objectindi1[(i+1)%edges].x, 
+                        objectindi1[(i+1)%edges].y, MAX_X-1, MAX_Y-1);
+      }
   }
 
 }
@@ -564,6 +579,11 @@ void loop() {
   for (int i = 0; i < edges; i++) {transform( &thruster[i], &physic1, &object4[i]);}
   // enemy
   for (int i = 0; i < edges; i++) {transform( &enemy1[i], &physicEnemy, &objectEnemy[i]);}
+  // indicator to Enemy
+  int rottemp = physic1.rot;
+  physic1.rot = (90-whereIsThat(&physic1, &physicEnemy))%360;
+  for (int i = 0; i < edges; i++) {transform( &indicator[i], &physic1, &objectindi1[i]);}
+  physic1.rot = rottemp;
 
   // draw bullets, dust
   for (int i = 0; i < MAX_BULLETS; i++) {if (bullet[i].isEnabled) {drawStar(bullet[i].xpos, bullet[i].ypos);}}
