@@ -1,13 +1,13 @@
 /*
-author: Jens FROEBEL created: 2017-03-12 modified: 2017-04-25
-version poligone_010.ino
+author: Jens FROEBEL created: 2017-03-12 modified: 2017-08-07
+version poligone_011.ino
 */
 #include <Arduboy.h>
 Arduboy arduboy;
 
 /* TODOs!
- * CalcPos with pointers
- * CalcVel with Pointers
+ * done: CalcPos with pointers
+ * done: CalcVel with Pointers
  * add Live Gauge to objects: ship, enemy, asteroid, planet
  * add pew pew sounds: tone()
  * update to <Arduino2.h>
@@ -23,12 +23,14 @@ Arduboy arduboy;
  * done: blink thruster
  * draw explosion
  * save high score to PROGMEM
- * show velocity
+ * done: show velocity
  * show live gauge
  * done: remove KEYDELAY
- * remove scale property, maybe :-)
- * more comments 
+ * remove scale property in struct model, maybe :-)
+ * done: more comments 
  * new algorithm for stars/dust --> maybe introduce 16 bit Fibonacci-LFSR or Galois-LFSR
+ * done: make grid as backgroud calculated on the fly for each frame, not from memory
+ * done: grid with lines
  * done: takeAction(physic1) --> gravity
  * done: define const Universe borders
  * done: cam follow ship in high distance
@@ -47,52 +49,54 @@ Arduboy arduboy;
 
 const byte MAX_Y = 64;
 const byte MAX_X = 128;
-const byte MAX_STARS = 20;
-const byte MAX_BULLETS = 3;
-const int BULLET_INTERVAL = 250;
-const int BULLET_TIME = 2000;
-const int UNIVERSE_X = MAX_X * 8;
-const int UNIVERSE_Y = MAX_Y * 4;
-//char text[16] = "Press Buttons!";;      //General string buffer
+const byte MAX_STARS = 10;                // max number of stars for the random starfield
+const byte MAX_BULLETS = 3;               // Max Number of Bullets in one screen
+const int BULLET_INTERVAL = 250;          // min interval between bullets
+const int BULLET_TIME = 2000;             // Time to life for each bullet
+const int UNIVERSE_X = MAX_X * 8;         // x size of this world
+const int UNIVERSE_Y = MAX_Y * 4;         // y size of this world
+//char text[16] = "Press Buttons!";;      // General string buffer
 
 //unsigned long lasttimestamp = 0;
 //unsigned long  newtimestamp = 0;
-bool thrusterenabled = 0;
-bool shakeCam = 0;
-bool fireEnabled = 0;
-long unsigned int lastBullet = 0;
-long unsigned int now = millis();
+bool thrusterenabled = 0;                 // define global bool for thruster
+bool shakeCam = 0;                        // define global bool for the shake effect
+bool fireEnabled = 0;                     // ?
+long unsigned int lastBullet = 0;         // count of shot bullets
+long unsigned int now = millis();         // copy of current timestamp
 
-const int edges = 5;
-struct model {float x, y;};
-struct camproperty {float x, y, zoom;} cam = {0, 0, 0.75};
+const int edges = 5;                      // count of edges for the objects
+struct model {float x, y;};               // struct for one vertex, to be use as array
+struct camproperty {float x, y, zoom;} cam = {0, 0, 0.75}; // pan and zoom of camera
 
-model ship1[] = {{0,2},{-1,-1},{-0.5,-0.5},{0.5,-0.5},{1,-1}};
-model planet[] = {{0,-1},{-0.951, -0.309},{-0.588, 0.809},{0.588, 0.809}, {0.951, -0.309}};
-model thruster[] = {{0,-3},{1,-2},{0.5,-1},{-0.5,-1},{-1,-2}};
+model ship1[] = {{0,2},{-1,-1},{-0.5,-0.5},{0.5,-0.5},{1,-1}}; // model of my space ship, asteroids-like
+model planet[] = {{0,-1},{-0.951, -0.309},{-0.588, 0.809},{0.588, 0.809}, {0.951, -0.309}}; // model of the planet, pentagone
+model thruster[] = {{0,-3},{1,-2},{0.5,-1},{-0.5,-1},{-1,-2}}; // model of thruster fire
 //model enemy1[] = {{}};
+model refin[] = {{-1,-1},{1,1}};  // reference window input
 
-model object1[] = {{0,0},{0,0},{0,0},{0,0},{0,0}};
+model object1[] = {{0,0},{0,0},{0,0},{0,0},{0,0}}; // template for an object with 5 vertices
 model object2[] = {{0,0},{0,0},{0,0},{0,0},{0,0}};
 model object3[] = {{0,0},{0,0},{0,0},{0,0},{0,0}};
 model object4[] = {{0,0},{0,0},{0,0},{0,0},{0,0}};
+model refout[] = {{-1,-1},{1,1}}; // reference window output
 
-struct property {
-    float mass, radius, scale; 
+struct property { // property of an object
+    float mass, radius, scale; // mass for gravity, radius for collision, scale for reshaping by scale
     float xpos, ypos, xvel, yvel, xacc, yacc;
     int rot;
     bool enable;
 };
 
-property physic1 = { 1, 2,  5,          -128, 0, 0, 0, 0, 0, 180, 1}; // ship
-property physic2 = {10, 1, 12,          0, 0, 0, 0, 0, 0,   0, 1}; // outer pentagone
-property physic3 = {10, 1, 12*809/1000, 0, 0, 0, 0, 0, 0, 180, 1}; // inner pentagone
+property physic1 = { 1, 2,  5,          -128, 0, 0, 0, 0, 0, 180, 1}; // ship propeties
+property physic2 = {10, 1, 12,          0, 0, 0, 0, 0, 0,   0, 1}; // outer pentagone properties
+property physic3 = {10, 1, 12*809/1000, 0, 0, 0, 0, 0, 0, 180, 1}; // inner pentagone properties
 
-int dust[MAX_STARS][2];
+int dust[MAX_STARS][2]; // array of dust particles
 
-struct projectile {
+struct projectile {  // struct of bullets, has no acceleration, no rotation
   float xpos, ypos, xvel, yvel;
-  unsigned long int timestamp;
+  unsigned long int timestamp; // timestamp of ignition - for time to life
   bool isEnabled;
 } bullet[MAX_BULLETS];
 
@@ -111,6 +115,58 @@ void drawStar(int xpos, int ypos) {
       }
 }
 
+void drawGrid() {
+  int x, y, gridGap, xWindowMin, xWindowMax, yWindowMin, yWindowMax, xGridMin, xGridMax, yGridMin, yGridMax;  
+
+  gridGap = 64; 
+  xWindowMin = round(-MAX_X/(cam.zoom*2) + cam.x);
+  xWindowMax = round( MAX_X/(cam.zoom*2) + cam.x);
+  yWindowMin = round(-MAX_Y/(cam.zoom*2) + cam.y);
+  yWindowMax = round( MAX_Y/(cam.zoom*2) + cam.y);
+
+  xGridMin = xWindowMin - (xWindowMin % gridGap);
+  xGridMax = xWindowMax + (gridGap - xWindowMax % gridGap);
+  yGridMin = yWindowMin - (yWindowMin % gridGap);
+  yGridMax = yWindowMax + (gridGap - yWindowMax % gridGap);
+  
+  for (int ix = xGridMin; ix < xGridMax; ix = ix + gridGap) {
+    for (int iy = yGridMin; iy < yGridMax; iy = iy + gridGap) {
+      x = (int) ((ix - cam.x) * cam.zoom) + (MAX_X / 2);
+      y = (int) ((iy - cam.y) * cam.zoom) + (MAX_Y / 2);
+      arduboy.drawPixel(x, y, WHITE);       
+    }  
+  }
+
+  gridGap = 192; 
+  xWindowMin = round(-MAX_X/(cam.zoom*2) + cam.x);
+  xWindowMax = round( MAX_X/(cam.zoom*2) + cam.x);
+  yWindowMin = round(-MAX_Y/(cam.zoom*2) + cam.y);
+  yWindowMax = round( MAX_Y/(cam.zoom*2) + cam.y);
+
+  xGridMin = xWindowMin - (xWindowMin % gridGap);
+  xGridMax = xWindowMax + (gridGap - xWindowMax % gridGap);
+  yGridMin = yWindowMin - (yWindowMin % gridGap);
+  yGridMax = yWindowMax + (gridGap - yWindowMax % gridGap);
+
+  // Linewise Grid
+  for (int ix = xGridMin; ix < xGridMax; ix = ix + gridGap) {
+    x = (int) ((ix - cam.x) * cam.zoom) + (MAX_X / 2);
+    //arduino.vline
+    arduboy.drawFastVLine(x, 0, MAX_Y-1, WHITE);
+
+  }
+  for (int iy = yGridMin; iy < yGridMax; iy = iy + gridGap) {
+    y = (int) ((iy - cam.y) * cam.zoom) + (MAX_Y / 2);
+    //arduino.hline
+    arduboy.drawFastHLine(0, y, MAX_X-1, WHITE);
+    
+  }
+  
+  //    arduboy.drawPixel(x, y, WHITE);       
+  //arduboy.drawFastVLine(x, 5, MAX_Y-11, WHITE);
+  //arduboy.drawFastHLine(5, y, MAX_X-11, WHITE);  
+}
+
 void transform(struct model *pntr, struct property *physic, struct model *outptr) {
   float sinrot, cosrot;
   sinrot = sin((physic->rot) * PI / 180.0); // calculate temporary sine
@@ -120,16 +176,16 @@ void transform(struct model *pntr, struct property *physic, struct model *outptr
   (*outptr).x     = ( (pntr->x) * cosrot) + ((pntr->y) * sinrot); 
     outptr->y     = (-(pntr->x) * sinrot) + ((pntr->y) * cosrot);
   // Coordinates Transformation SCALING
-    outptr->x     =   (outptr->x) * (physic->scale);
-    outptr->y     =   (outptr->y) * (physic->scale);
+    outptr->x     *=  (physic->scale);
+    outptr->y     *=  (physic->scale);
   // Coordinates Transformation TRANSLATION
-    outptr->x     =   (outptr->x) + (physic->xpos);
-    outptr->y     =   (outptr->y) + (physic->ypos);
+    outptr->x     +=  (physic->xpos);
+    outptr->y     +=  (physic->ypos);
   // Coordinates Transformation by 1st Cam Pan and then 2nd Zoom
-    outptr->x     =   (outptr->x) - (cam.x);
-    outptr->y     =   (outptr->y) - (cam.y);
-    outptr->x     =   (outptr->x) * (cam.zoom);
-    outptr->y     =   (outptr->y) * (cam.zoom);
+    outptr->x     -=  (cam.x);
+    outptr->y     -=  (cam.y);
+    outptr->x     *=  (cam.zoom);
+    outptr->y     *=  (cam.zoom);
     outptr->x     +=  (MAX_X / 2);
     outptr->y     +=  (MAX_Y / 2);
     
@@ -138,6 +194,14 @@ void transform(struct model *pntr, struct property *physic, struct model *outptr
 // output crossing point where x0
 float intersection(float x1, float y1, float x2, float y2, float x0) {
   return ((x0-x1)*(y2-y1)/(x2-x1))+y1;
+}
+
+void drawVelGauge() {
+    int absvel = sqrt(sq(physic1.xvel) + sq(physic1.yvel)) * 16;
+    
+    arduboy.drawRect(2, 2, 2+32, 2+1, WHITE);
+    arduboy.drawFastHLine(2, 3, 2+absvel, WHITE);
+
 }
 
 // Constrain a Line to the display borders
@@ -204,17 +268,17 @@ void draw(void) {
   }
 
 }
-
+/*
 uint16_t LFSR(uint16_t lfsr, int count) { // Galois LFSRs
 bool lsb;
 for (int i = 0; i < count; i++) {
-        lsb = lfsr & 1;              /* Get LSB (i.e., the output bit). */
-        lfsr >>= 1;                  /* Shift register */
-        if (lsb) {lfsr ^= 0xB400u;}  /* If the output bit is 1, apply toggle mask. */
+        lsb = lfsr & 1;              // Get LSB (i.e., the output bit). 
+        lfsr >>= 1;                  // Shift register 
+        if (lsb) {lfsr ^= 0xB400u;}  // If the output bit is 1, apply toggle mask. 
     }
   return lfsr;
 }
-
+*/
 void setup() {
   //Serial.begin(9600);  
   // initiate arduboy instance
@@ -228,8 +292,7 @@ void setup() {
   
   for (int i = 0; i < MAX_STARS; i++) {dust[i][0] = random(-UNIVERSE_X * 1.3, UNIVERSE_X * 1.3) ; dust[i][1] = random(-UNIVERSE_Y * 1.3, UNIVERSE_Y * 1.3);}
   //for (int i = 0; i < MAX_STARS; i++) {dust[i][0] = i; dust[i][1] = 0;}
-  
-  
+    
   for (int i = 0; i < MAX_BULLETS; i++) {bullet[i].isEnabled = 0;};
 
 }
@@ -373,6 +436,7 @@ void loop() {
   CalcBullets();
   CalcCam();  
 
+
   // blink thruster
   if (thrusterenabled) {
     thrusterenabled = ((now % 150) >= 100);
@@ -397,7 +461,8 @@ void loop() {
   arduboy.clear();
   //arduboy.fillScreen(BLACK);
   draw();
-
+  drawGrid();
+  drawVelGauge();
   //arduboy.drawPixel(64, 32, WHITE);
   //arduboy.drawRoundRect(0, 0, MAX_X, MAX_Y, 4, WHITE);
   //arduboy.drawFastVLine(x, 5, MAX_Y-11, WHITE);
