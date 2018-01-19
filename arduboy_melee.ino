@@ -1,6 +1,6 @@
 /*
-author: Jens FROEBEL created: 2017-03-12 modified: 2018-01-12
-version poligone_015.ino with separate Code Files
+author: Jens FROEBEL created: 2017-03-12 modified: 2018-01-19
+version 0.16
 */
 #include <Arduboy.h>
 Arduboy arduboy;
@@ -27,17 +27,19 @@ const int edges = 5;                      // count of edges for the objects
 struct model {float x, y;};               // struct for one vertex, to be use as array
 struct camproperty {float x, y, zoom;} cam = {0, 0, 0.75}; // pan and zoom of camera
 
-model ship1[] = {{0,2},{-1,-1},{-0.5,-0.5},{0.5,-0.5},{1,-1}}; // model of my space ship, asteroids-like
-model planet[] = {{0,-1},{-0.951, -0.309},{-0.588, 0.809},{0.588, 0.809}, {0.951, -0.309}}; // model of the planet, pentagone
-model thruster[] = {{0,-3},{1,-2},{0.5,-1},{-0.5,-1},{-1,-2}}; // model of thruster fire
-model enemy1[] = {{0,1.5},{0.5,1},{0.5,-1.5},{-0.5,-1.5},{-0.5,1}};
+model ship1[]     = {{0,2},{-1,-1},{-0.5,-0.5},{0.5,-0.5},{1,-1}}; // model of my space ship, asteroids-like
+model ship2[]     = {{0,1},{-1.5,-1},{-0.5,-0.5},{0.5,-0.5},{1.5,-1}}; // model of short space ship
+model ship3[]     = {{0,3.5},{-1,-1},{-0.5,-0.5},{0.5,-0.5},{1,-1}}; // model of long space ship
+model planet[]    = {{0,-1},{-0.951, -0.309},{-0.588, 0.809},{0.588, 0.809}, {0.951, -0.309}}; // model of the planet, pentagone
+model thruster[]  = {{0,-3},{1,-2},{0.5,-1},{-0.5,-1},{-1,-2}}; // model of thruster fire
+model enemy1[]    = {{0,1.5},{0.5,1},{0.5,-1.5},{-0.5,-1.5},{-0.5,1}};
 model indicator[] = {{0,6},{-3,5},{-1,5.5},{1,5.5},{3,5}};
 
 // template for calculating the objects
-model object1[] = {{0,0},{0,0},{0,0},{0,0},{0,0}}; // template for an object with 5 vertices
-model object2[] = {{0,0},{0,0},{0,0},{0,0},{0,0}}; // outer planet
-model object3[] = {{0,0},{0,0},{0,0},{0,0},{0,0}}; // inner planet
-model object4[] = {{0,0},{0,0},{0,0},{0,0},{0,0}}; // thruster
+model object1[]     = {{0,0},{0,0},{0,0},{0,0},{0,0}}; // template for an object with 5 vertices
+model object2[]     = {{0,0},{0,0},{0,0},{0,0},{0,0}}; // outer planet
+model object3[]     = {{0,0},{0,0},{0,0},{0,0},{0,0}}; // inner planet
+model object4[]     = {{0,0},{0,0},{0,0},{0,0},{0,0}}; // thruster
 model objectEnemy[] = {{0,0},{0,0},{0,0},{0,0},{0,0}}; // enemy
 model objectindi1[] = {{0,0},{0,0},{0,0},{0,0},{0,0}}; // enemy indicator
 
@@ -54,11 +56,11 @@ struct projectile {  // struct of bullets, has no acceleration, no rotation
   bool isEnabled;
 } bullet[MAX_BULLETS];
 
-//                   m  r   s          xp yp   xv yv   xa ya      r  e
-property physic1 = { 1, 2,  5,       -128, 0,   0, 0,   0, 0,   180, 1}; // ship propeties
-property physic2 = {10, 1, 12,          0, 0,   0, 0,   0, 0,     0, 1}; // outer pentagone properties
-property physic3 = {10, 1, 12*809/1000, 0, 0,   0, 0,   0, 0,   180, 1}; // inner pentagone properties
-property physicEnemy = { 1, 1.5, 5,  +128, 0,   0,+0.67,   0, 0,     0, 1}; // enemy propeties
+//                       m    r   s             xp yp   xv     yv   xa ya      r  e
+property physic1     = { 1, 2.0,  5,          -128, 0,   0,  0.00,   0, 0,   180, 1}; // ship propeties
+property physic2     = {10, 1.0, 12,             0, 0,   0,  0.00,   0, 0,     0, 1}; // outer pentagone properties
+property physic3     = {10, 1.0, 12*809/1000,    0, 0,   0,  0.00,   0, 0,   180, 1}; // inner pentagone properties
+property physicEnemy = { 1, 1.5,  5,          +128, 0,   0, +0.67,   0, 0,     0, 1}; // enemy propeties
 
 int dust[MAX_STARS][2]; // array of dust particles
 

@@ -1,10 +1,10 @@
 # TODOs
 
+ * !!! takeAction(physic4) --> Enemy, turn to ship, trust, shoot
  * add pew pew sounds: tone()
  * update to <Arduino2.h>
  * model + physic = object, make one common struct or include model as pointer in physic
  * add parallax starfield
- * !!! takeAction(physic4) --> Enemy, turn to ship, trust, shoot
  
  * asteroid: model + physic-property
  * collision test, use radius property
@@ -15,15 +15,14 @@
 
 ## Weaponary
 
- - additional Weapon: Translocation-Portal
- - additional Weapon: Wingbots
- - additional Weapon: floating time bomb
- - additional Weapon: homing missile
+ * additional Weapon: Translocation-Portal
+ * additional Weapon: Wingbots
+ * additional Weapon: floating time bomb
+ * additional Weapon: homing missile
  * bullets: xvel, yvel, xpos, ypos, enable, force, maxdistance, traveled
  * rocket:  xvel, yvel, xpos, ypos, xacc, yacc, enable, force, maxdistance, traveled, mass, rot, scale, 
  * homing missile: transform position of enemy to missile orientation, then steer by resulting position
  * bomb:    xvel, yvel, xpos, ypos, xacc, yacc, enable, force, mass, scale --> release (btn) and ignite (btn)
-
  
 # DONE
  
